@@ -1,0 +1,60 @@
+# Databricks Asset Bundle: deploys the pipeline as a Databricks Workflow (job).
+#
+#   databricks auth login --host https://<your-workspace>.cloud.databricks.com
+#   databricks bundle validate
+#   databricks bundle deploy -t dev
+#   databricks bundle run -t dev healthcare_lakehouse --params batch_id=batch_001
+#
+# Works on Databricks Free Edition: no cluster is defined, so tasks run on serverless compute.
+bundle:
+  name: healthcare-lakehouse
+
+variables:
+  catalog:
+    description: Unity Catalog catalog (Free Edition ships with "workspace")
+    default: workspace
+  schema:
+    default: lakehouse
+
+sync:
+  exclude:
+    - data/**
+    - .venv/**
+
+resources:
+  jobs:
+    healthcare_lakehouse:
+      name: healthcare-lakehouse-pipeline
+      max_concurrent_runs: 1        # batches must be applied in order (SCD2)
+      parameters:
+        - name: batch_id
+          default: batch_001
+        - name: catalog
+          default: ${var.catalog}
+        - name: schema
+          default: ${var.schema}
+      tasks:
+        - task_key: bronze
+          notebook_task:
+            notebook_path: ./databricks/notebooks/run_layer.py
+            base_parameters: {layer: bronze}
+        - task_key: silver
+          depends_on: [{task_key: bronze}]
+          notebook_task:
+            notebook_path: ./databricks/notebooks/run_layer.py
+            base_parameters: {layer: silver}
+        - task_key: gold
+          depends_on: [{task_key: silver}]
+          notebook_task:
+            notebook_path: ./databricks/notebooks/run_layer.py
+            base_parameters: {layer: gold}
+        - task_key: optimize
+          depends_on: [{task_key: gold}]
+          notebook_task:
+            notebook_path: ./databricks/notebooks/run_layer.py
+            base_parameters: {layer: optimize}
+
+targets:
+  dev:
+    mode: development   # prefixes the job name with [dev <you>], so it never clashes
+    default: true

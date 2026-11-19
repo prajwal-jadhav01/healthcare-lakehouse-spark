@@ -1,0 +1,71 @@
+# Local "cloud": MinIO plays the role of S3, Airflow runs the pipeline.
+#   make data      # generate landing CSVs first
+#   make up        # start everything, upload landing data to MinIO
+#   make airflow-run BATCH=batch_001
+
+x-lakehouse-env: &lakehouse-env
+  STORAGE_MODE: path
+  LANDING_ROOT: s3a://lakehouse/landing
+  LAKE_ROOT: s3a://lakehouse/lake
+  S3_ENDPOINT: http://minio:9000
+  S3_ACCESS_KEY: ${MINIO_USER:-lakehouse}
+  S3_SECRET_KEY: ${MINIO_PASSWORD:-lakehouse-secret}
+  PHI_HASH_SALT: ${PHI_HASH_SALT:-local-demo-salt}
+
+services:
+  minio:
+    # The official minio/minio images are no longer published on Docker Hub;
+    # this is the frozen Bitnami build of MinIO (fine for a local demo).
+    image: bitnamilegacy/minio:2025.4.22
+    environment:
+      MINIO_ROOT_USER: ${MINIO_USER:-lakehouse}
+      MINIO_ROOT_PASSWORD: ${MINIO_PASSWORD:-lakehouse-secret}
+      MINIO_DEFAULT_BUCKETS: lakehouse
+    ports:
+      - "9000:9000"   # S3 API
+      - "9001:9001"   # web console: http://localhost:9001
+    volumes:
+      - minio-data:/bitnami/minio/data
+    healthcheck:
+      test: ["CMD", "curl", "-fs", "http://localhost:9000/minio/health/live"]
+      interval: 5s
+      retries: 20
+
+  # Uploads ./data/landing to s3://lakehouse/landing with the real AWS CLI
+  # (the same command works against real S3 if you drop --endpoint-url).
+  minio-init:
+    image: amazon/aws-cli:2.27.0
+    depends_on:
+      minio:
+        condition: service_healthy
+    environment:
+      AWS_ACCESS_KEY_ID: ${MINIO_USER:-lakehouse}
+      AWS_SECRET_ACCESS_KEY: ${MINIO_PASSWORD:-lakehouse-secret}
+      AWS_DEFAULT_REGION: us-east-1
+    volumes:
+      - ./data/landing:/landing:ro
+    command: ["s3", "sync", "/landing", "s3://lakehouse/landing", "--endpoint-url", "http://minio:9000", "--delete", "--only-show-errors"]
+
+  airflow:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile
+    image: healthcare-lakehouse-airflow:local
+    command: standalone
+    depends_on:
+      minio-init:
+        condition: service_completed_successfully
+    environment:
+      <<: *lakehouse-env
+      AIRFLOW__CORE__LOAD_EXAMPLES: "false"
+      AIRFLOW__CORE__DAGS_ARE_PAUSED_AT_CREATION: "true"
+      _AIRFLOW_DB_MIGRATE: "true"
+      SPARK_DRIVER_MEMORY: 2g
+    ports:
+      - "8080:8080"   # Airflow UI: http://localhost:8080
+    volumes:
+      - ./airflow/dags:/opt/airflow/dags
+      - ./src:/opt/lakehouse/src   # edit code without rebuilding the image
+
+volumes:
+  minio-data:
