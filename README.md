@@ -17,6 +17,10 @@ It is the batch counterpart to my streaming project
 The data is **synthetic** ([Synthea](https://github.com/synthetichealth/synthea)): realistic
 patients, encounters, diagnoses and prescriptions, but no real people.
 
+A run of the job on Databricks Free Edition (serverless), with each layer as its own task:
+
+![Databricks job run: bronze, silver, gold, optimize all succeeded](docs/images/databricks-job-run.png)
+
 ```mermaid
 flowchart LR
     S[Synthea CSVs<br/>landing/batch_NNN] --> B
@@ -134,10 +138,6 @@ docker compose exec airflow python -m lakehouse.jobs.report
    `databricks fs cp -r data/landing dbfs:/Volumes/workspace/lakehouse/landing`
 5. `make bundle-run BATCH=batch_001`, then `make bundle-run BATCH=batch_002`.
 6. Open `databricks/notebooks/02_explore` for the demo queries, including time travel with `VERSION AS OF`.
-
-A run of the job on Databricks Free Edition (serverless), with each layer as its own task:
-
-![Databricks job run: bronze, silver, gold, optimize all succeeded](docs/images/databricks-job-run.png)
 
 No CLI? Use **Workspace → Create → Git folder**, paste this repo's URL, and run the `run_layer` notebook
 with the widgets `layer = all` and `batch_id = batch_001`.
