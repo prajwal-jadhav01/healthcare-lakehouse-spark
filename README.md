@@ -83,6 +83,8 @@ flowchart LR
 
 ## Results on the sample data (1,000 Synthea patients, seed 42)
 
+Your numbers will be a few percent different: Synthea simulates up to today's date, so each run differs slightly.
+
 | | rows |
 |---|---|
 | patients / encounters / conditions / medications (batch_001) | 1,145 / 69,809 / 42,136 / 60,117 |
